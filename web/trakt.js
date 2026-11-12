@@ -197,10 +197,15 @@ var WebTrakt = (function () {
       var key = kind + ':' + media.ids.trakt;
       if (seen[key] || items.length >= 8) return;
       seen[key] = true;
+      var meta = '';
+      if (episode) {
+        var number = {s: episode.season, e: episode.number};
+        meta = progress ? trf('Continue: S{s} E{e}', number) : trf('Up next: S{s} E{e}', number);
+        if (typeof episode.title === 'string' && episode.title.trim()) meta += ' - ' + episode.title.trim();
+      }
       items.push({
         id: media.ids.tmdb, traktId: Number(media.ids.trakt), kind: kind, title: media.title,
-        meta: episode ? (progress ? trf('Continue: S{s} E{e}', {s: episode.season, e: episode.number}) :
-          trf('Up next: S{s} E{e}', {s: episode.season, e: episode.number})) : '',
+        meta: meta,
         progress: progress, fromTrakt: true
       });
     }
