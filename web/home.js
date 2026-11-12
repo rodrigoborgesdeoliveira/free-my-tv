@@ -382,7 +382,8 @@
   var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', CITY: 'city', KEY: 'key', ABOUT: 'about'};
   var TRAKT_TAB = 3, FIRST_BUTTON = 4;
   var traktStatus = '', traktCode = '';
-  var st = {zone: Z.SHELF, top: 0, tab: WebTrakt.connected() ? TRAKT_TAB : 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
+  var waitingForStartupQueue = WebTrakt.connected() && !WebTrakt.cards().length;
+  var st = {zone: WebTrakt.cards().length ? Z.CARDS : Z.SHELF, top: 0, tab: WebTrakt.connected() ? TRAKT_TAB : 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
   var cards = [];
 
   function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.CITY || st.zone === Z.KEY || st.zone === Z.ABOUT; }
@@ -465,8 +466,16 @@
       st.tab = TRAKT_TAB;
       refreshTrakt();
     }
+    if (waitingForStartupQueue && (status === 'loaded' || status === 'error')) {
+      waitingForStartupQueue = false;
+      if (WebTrakt.cards().length) {
+        st.card = 0;
+        st.zone = Z.CARDS;
+      }
+    }
     renderTop();
     renderCards();
+    updateFocus();
     if (st.zone === Z.SETTINGS) renderSettings();
     if (st.zone === Z.ABOUT) renderAbout(aboutInfo);
   }
@@ -1500,6 +1509,7 @@
   }
 
   function activate() {
+    waitingForStartupQueue = false;
     switch (st.zone) {
       case Z.TOP:
         if (st.top < FIRST_BUTTON) return;
@@ -1556,6 +1566,7 @@
   }
 
   function move(dx, dy) {
+    waitingForStartupQueue = false;
     var tiles = $('tiles').children, cardNodes = $('cards').children;
     switch (st.zone) {
       case Z.SHELF:
@@ -1612,6 +1623,7 @@
   }
 
   function back() {
+    waitingForStartupQueue = false;
     if (st.zone === Z.EDIT) {
       setClass($('shelfedit'), 'open', false);
       openSettings();
@@ -1637,6 +1649,7 @@
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
       if (zone === Z.TOP && index < FIRST_BUTTON && !tabVisible(index)) return;   // the tabs are hidden without the picks
       if (zone === Z.SHELF && st.zone === Z.DRAWER) closeDrawer();
+      waitingForStartupQueue = false;
       st.zone = zone;
       if (zone === Z.TOP) { st.top = index; if (index < FIRST_BUTTON) selectTab(index); }
       else if (zone === Z.CARDS) st.card = index;
@@ -1879,7 +1892,8 @@
     hideSaver();
     hideAmbient();
     closeSheets();
-    st.zone = Z.SHELF;
+    waitingForStartupQueue = WebTrakt.connected() && !WebTrakt.cards().length;
+    st.zone = WebTrakt.cards().length ? Z.CARDS : Z.SHELF;
     st.shelf = 0;
     st.card = 0;
     selectTab(WebTrakt.connected() ? TRAKT_TAB : 0);
@@ -1896,7 +1910,7 @@
 
   /** drawer_first: the home screen rests with the drawer open (shelf in the middle, inputs and weather below). */
   function restInDrawer() {
-    if (!CONFIG.drawerFirst || !drawerItems.length || st.zone !== Z.SHELF) return;
+    if (WebTrakt.connected() || !CONFIG.drawerFirst || !drawerItems.length || st.zone !== Z.SHELF) return;
     st.zone = Z.DRAWER;
     st.drawer = 0;
     updateFocus();
