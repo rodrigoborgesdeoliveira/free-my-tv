@@ -239,9 +239,22 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   top: 0;
   width: 100%;
   height: 100%;
+  border-radius: inherit;
   background-size: cover;
   background-position: center top;
 }
+.watch-progress {
+  position: absolute;
+  z-index: 2;
+  left: 20px;
+  right: 20px;
+  bottom: 14px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.55);
+}
+.watch-progress-fill { height: 100%; background: #FFF; }
 .card .back {
   opacity: 0;
   -webkit-transition: opacity 0.3s;
@@ -303,6 +316,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night .card .meta { color: rgba(245, 245, 247, 0.62); }
 
 /* Without a TMDB key (or picks yet): the date and the time instead of the cards. */
+#trakt-empty { position: absolute; left: 80px; top: 278px; font-size: 36px; }
+
 #clock {
   position: absolute;
   left: 76px;

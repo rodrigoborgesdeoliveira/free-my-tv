@@ -53,6 +53,7 @@ def read_config(path):
 
     return {
         'tmdbKey': values.get('tmdb_key', ''),
+        'traktClientId': values.get('trakt_client_id', ''),
         'tmdbRegion': values.get('tmdb_region', 'US') or 'US',
         'latitude': number('latitude', '40.7128'),
         'longitude': number('longitude', '-74.0060'),

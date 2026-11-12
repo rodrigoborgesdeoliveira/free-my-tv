@@ -380,7 +380,9 @@
   // MARK: - Focus
 
   var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', CITY: 'city', KEY: 'key', ABOUT: 'about'};
-  var st = {zone: Z.SHELF, top: 0, tab: 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
+  var TRAKT_TAB = 3, FIRST_BUTTON = 4;
+  var traktStatus = '', traktCode = '';
+  var st = {zone: Z.SHELF, top: 0, tab: WebTrakt.connected() ? TRAKT_TAB : 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0};
   var cards = [];
 
   function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.CITY || st.zone === Z.KEY || st.zone === Z.ABOUT; }
@@ -393,8 +395,8 @@
       setClass(list[i], 'focus', st.zone === Z.TOP && st.top === i);
     }
     list = $('buttons').children;
-    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.TOP && st.top === 3 + i);
-    setClass($('quotes'), 'hide', st.zone === Z.TOP && st.top >= 3);
+    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.TOP && st.top === FIRST_BUTTON + i);
+    setClass($('quotes'), 'hide', st.zone === Z.TOP && st.top >= FIRST_BUTTON);
     layoutCards();
     list = $('cards').children;
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.CARDS && st.card === i);
@@ -445,13 +447,42 @@
 
   var TAB_KIND = [null, 'movie', 'tv'];
 
+  function tabVisible(index) {
+    return index === TRAKT_TAB ? WebTrakt.connected() : Data.hasKey();
+  }
+
+  function moveTop(dx) {
+    var index = st.top + dx;
+    while (index >= 0 && index < FIRST_BUTTON && !tabVisible(index)) index += dx;
+    if (index >= 0 && index <= FIRST_BUTTON + 2) st.top = index;
+    if (st.top < FIRST_BUTTON) selectTab(st.top);
+  }
+
+  function traktChanged(status, code) {
+    traktStatus = status;
+    traktCode = code || '';
+    if (status === 'connected') {
+      st.tab = TRAKT_TAB;
+      refreshTrakt();
+    }
+    renderTop();
+    renderCards();
+    if (st.zone === Z.SETTINGS) renderSettings();
+    if (st.zone === Z.ABOUT) renderAbout(aboutInfo);
+  }
+
+  function refreshTrakt() {
+    WebTrakt.refresh(Data.traktArtwork, traktChanged);
+  }
+
   function renderTop() {
     $('title').textContent = tr('For You');
     var tabs = $('tabs');
     tabs.innerHTML = '';
-    var names = [tr('Explore'), tr('Movies'), tr('Shows')];
-    for (var i = 0; i < 3; i++) {
+    var names = [tr('Explore'), tr('Movies'), tr('Shows'), tr('Continue Watching')];
+    for (var i = 0; i < names.length; i++) {
       var t = el('button', 'tab', tabs, names[i]);
+      t.style.display = tabVisible(i) ? '' : 'none';
       hover(t, Z.TOP, i);
     }
     var buttons = $('buttons');
@@ -463,7 +494,7 @@
       r.style.left = (1596 + 88 * b) + 'px';
       sym(defs[b][0], r);
       el('div', 'tip', r, defs[b][1]);
-      hover(r, Z.TOP, 3 + b);
+      hover(r, Z.TOP, FIRST_BUTTON + b);
     }
   }
 
@@ -479,14 +510,27 @@
 
   // MARK: - Picks and background
 
+  function cardImage(card, size, poster) {
+    return card.traktImage || Data.image(poster && card.poster ? card.poster : card.backdrop, size);
+  }
+
   function renderCards() {
-    var list = Data.picks(TAB_KIND[st.tab]);
+    if (!tabVisible(st.tab)) st.tab = WebTrakt.connected() ? TRAKT_TAB : 0;
+    var list = st.tab === TRAKT_TAB ? WebTrakt.cards() : Data.picks(TAB_KIND[st.tab]);
     var holder = $('cards');
-    setClass(body, 'no-picks', !list.length);
-    setClass(body, 'no-key', !Data.hasKey());   // as on Android: no title or tabs that could never show anything
-    if (!Data.hasKey() && st.zone === Z.TOP && st.top < 3) st.top = 3;
+    var showTrakt = st.tab === TRAKT_TAB;
+    setClass(body, 'no-picks', !list.length && !showTrakt);
+    $('trakt-empty').textContent = showTrakt && !list.length ?
+      (traktStatus === 'loaded' ? tr('Nothing half-watched in your apps.') :
+        traktStatus === 'error' ? tr('Unavailable') : tr('Connecting…')) : '';
+    setClass(body, 'no-key', !Data.hasKey() && !WebTrakt.connected());
+    if (st.zone === Z.TOP && st.top < FIRST_BUTTON && !tabVisible(st.top)) {
+      st.top = tabVisible(st.tab) ? st.tab : FIRST_BUTTON;
+    }
+    var tabs = $('tabs').children;
+    for (var t = 0; t < tabs.length; t++) tabs[t].style.display = tabVisible(t) ? '' : 'none';
     var same = list.length === cards.length;
-    for (var i = 0; same && i < list.length; i++) same = list[i].id === cards[i].id && list[i].backdrop === cards[i].backdrop && list[i].meta === cards[i].meta;
+    for (var i = 0; same && i < list.length; i++) same = list[i].id === cards[i].id && list[i].backdrop === cards[i].backdrop && list[i].traktImage === cards[i].traktImage && list[i].meta === cards[i].meta && list[i].progress === cards[i].progress;
     if (same && holder.children.length === list.length) return;
     cards = list;
     holder.innerHTML = '';
@@ -495,15 +539,19 @@
       var img = el('div', 'img', card);
       // Narrow: the poster (the backdrop cropped without one); the wide card fades its backdrop in over it, loaded then.
       var poster = el('div', 'layer', img);
-      poster.style.backgroundImage = 'url(' + (p.poster ? Data.image(p.poster, 'w342') : Data.image(p.backdrop, 'w780')) + ')';
-      el('div', 'layer back', img);
+      poster.style.backgroundImage = 'url(' + cardImage(p, p.poster ? 'w342' : 'w780', true) + ')';
+      if (!p.traktImage) el('div', 'layer back', img);
+      if (p.progress) {
+        var progress = el('div', 'watch-progress', img);
+        el('div', 'watch-progress-fill', progress).style.width = p.progress + '%';
+      }
       el('div', 'name', card, p.title);
       if (p.meta) el('div', 'meta', card, p.meta);
       hover(card, Z.CARDS, c);
     }
     st.card = Math.min(st.card, Math.max(0, list.length - 1));
     if (!list.length && st.zone === Z.CARDS) st.zone = Z.SHELF;
-    backdrop(list.length ? Data.image(list[st.card].backdrop, 'w300') : '');
+    backdrop(list.length ? cardImage(list[st.card], 'w300') : '');
     updateFocus();
   }
 
@@ -522,7 +570,8 @@
       setClass(n, 'edge', at < 0 || at > 1740);
       if (wide && !n.getAttribute('data-back') && cards[i]) {
         n.setAttribute('data-back', '1');
-        n.querySelector('.back').style.backgroundImage = 'url(' + Data.image(cards[i].backdrop, 'w1280') + ')';
+        var back = n.querySelector('.back');
+        if (back) back.style.backgroundImage = 'url(' + cardImage(cards[i], 'w1280') + ')';
       }
       left += w + 40;
     }
@@ -531,7 +580,32 @@
 
   var bgUrl = null, bgFront = 'bgA';
 
-  /** The focused pick's photo as the background: drawn tiny and stretched, it's already as soft as a heavy blur. */
+  // Blur when the photo changes, so the TV only animates opacity during the crossfade.
+  var blurSource = document.createElement('canvas');
+  var blurPass = document.createElement('canvas');
+
+  function drawBackdrop(image, canvas) {
+    var width = canvas.width, height = canvas.height, radius = 6;
+    blurSource.width = blurPass.width = width + 2 * radius;
+    blurSource.height = blurPass.height = height + 2 * radius;
+    var source = blurSource.getContext('2d'), horizontal = blurPass.getContext('2d');
+    var scale = Math.max(blurSource.width / image.width, blurSource.height / image.height);
+    var w = image.width * scale, h = image.height * scale;
+    source.drawImage(image, (blurSource.width - w) / 2, (blurSource.height - h) / 2, w, h);
+
+    var output = canvas.getContext('2d');
+    for (var i = 0; i <= 2 * radius; i++) {
+      horizontal.globalAlpha = 1 / (i + 1);
+      horizontal.drawImage(blurSource, i, 0, width, blurSource.height, 0, 0, width, blurSource.height);
+    }
+    for (var j = 0; j <= 2 * radius; j++) {
+      output.globalAlpha = 1 / (j + 1);
+      output.drawImage(blurPass, 0, j, width, height, 0, 0, width, height);
+    }
+    output.globalAlpha = 1;
+  }
+
+  /** The focused pick's photo as the background. */
   function backdrop(url) {
     if (url === bgUrl) return;
     bgUrl = url;
@@ -544,8 +618,7 @@
     var img = new Image();
     img.onload = function () {
       if (bgUrl !== url) return;
-      var canvas = $(next), ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      drawBackdrop(img, $(next));
       setClass(canvas, 'on', true);
       setClass($(bgFront), 'on', false);
       bgFront = next;
@@ -560,7 +633,7 @@
   function followSoon() {
     clearTimeout(bgTimer);
     bgTimer = setTimeout(function () {
-      if (cards.length) backdrop(Data.image(cards[Math.min(st.card, cards.length - 1)].backdrop, 'w300'));
+      if (cards.length) backdrop(cardImage(cards[Math.min(st.card, cards.length - 1)], 'w300'));
     }, BG_FOLLOW_MS);
   }
 
@@ -893,6 +966,20 @@
     }
     rows.push({label: tr('TMDB key'), value: Prefs.tmdbKey().length >= 4 ? '•••• ' + Prefs.tmdbKey().slice(-4) : tr('Not set'), opens: true, tmdb: true,
       step: function (d) { if (d >= 0) openKey(); }});
+    if (WebTrakt.available) {
+      var value = WebTrakt.connected() ? tr('Sign out') : tr('Sign in');
+      if (traktStatus === 'code') value = 'trakt.tv/activate  ·  ' + traktCode;
+      if (traktStatus === 'connecting') value = tr('Connecting…');
+      if (traktStatus === 'error' && !WebTrakt.connected()) value = tr('Sign in');
+      if (traktStatus === 'unsupported') value = tr('Unavailable');
+      rows.push({label: 'Trakt', value: value, opens: true, step: function (d) {
+        if (d < 0) return;
+        if (WebTrakt.connected()) {
+          WebTrakt.signOut();
+          traktChanged('');
+        } else WebTrakt.signIn(traktChanged);
+      }});
+    }
     var sv = Data.services();
     if (sv.length) {
       var someOff = false;   // only the services this TV has count
@@ -1258,7 +1345,10 @@
 
   // MARK: - About this TV: what to quote when reporting a problem, without LG's or Samsung's slow menus
 
+  var aboutInfo;
+
   function renderAbout(info) {
+    aboutInfo = info;
     var box = $('about').firstChild;
     box.innerHTML = '';
     el('div', 'title', box, tr('About this TV'));
@@ -1267,6 +1357,7 @@
       [tr('Model'), info && info.model], [tr('Firmware'), info && info.firmware], [tr('System'), info && info.system],
       [tr('IP address'), info && info.ip], [tr('Time zone'), TV.zone()], ['Free My TV', info && info.version]
     ];
+    if (WebTrakt.connected()) rows.push(['Trakt artwork', WebTrakt.artworkStatus() || '…']);
     for (var i = 0; i < rows.length; i++) {
       var row = el('div', 'row', holder), label = el('span', '', row, rows[i][0]);
       fitValue(row, label, el('span', 'value', row, info ? rows[i][1] || tr('Unavailable') : '…'));
@@ -1410,14 +1501,15 @@
   function activate() {
     switch (st.zone) {
       case Z.TOP:
-        if (st.top < 3) return;
-        if (st.top === 3) { var box2 = boxTV(); if (box2) launcher(box2.id, boxLabel())(); }
-        else if (st.top === 4) { st.zone = Z.SHELF; openDrawer(); st.drawer = 1 < drawerInputs ? 1 : 0; updateFocus(); }
+        if (st.top < FIRST_BUTTON) return;
+        if (st.top === FIRST_BUTTON) { var box2 = boxTV(); if (box2) launcher(box2.id, boxLabel())(); }
+        else if (st.top === FIRST_BUTTON + 1) { st.zone = Z.SHELF; openDrawer(); st.drawer = 1 < drawerInputs ? 1 : 0; updateFocus(); }
         else openSettings();
         return;
       case Z.CARDS:
         var target = pickTarget(cards[st.card]);
         if (target) launcher(target.app.id, target.app.title, target.params)();
+        else if (cards[st.card] && cards[st.card].fromTrakt) toast(trf("Couldn't open {app}.", {app: cards[st.card].title}));
         return;
       case Z.SHELF:
         if (shelf[st.shelf]) launcher(shelf[st.shelf].id, shelf[st.shelf].title)();
@@ -1470,7 +1562,7 @@
         else if (dy > 0) { openDrawer(); return; }
         else if (dy < 0) {
           if (cards.length) { st.zone = Z.CARDS; st.card = nearest(cardNodes, centerX(tiles[st.shelf])); }
-          else { st.zone = Z.TOP; st.top = Data.hasKey() ? st.tab : 3; }
+          else { st.zone = Z.TOP; st.top = tabVisible(st.tab) ? st.tab : FIRST_BUTTON; }
         }
         break;
       case Z.CARDS:
@@ -1480,10 +1572,9 @@
         break;
       case Z.TOP:
         if (dx) {
-          st.top = Math.max(Data.hasKey() ? 0 : 3, Math.min(5, st.top + dx));   // without the picks the tabs can't hold focus
-          if (st.top < 3) selectTab(st.top);   // as on Apple TV: focusing a tab selects it
+          moveTop(dx);
         } else if (dy > 0) {
-          if (cards.length) { st.zone = Z.CARDS; st.card = Math.min(cards.length - 1, st.top < 3 ? 0 : cards.length - 1); }
+          if (cards.length) { st.zone = Z.CARDS; st.card = Math.min(cards.length - 1, st.top < FIRST_BUTTON ? 0 : cards.length - 1); }
           else st.zone = Z.SHELF;
         }
         break;
@@ -1543,10 +1634,10 @@
       if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.CITY || zone === Z.KEY || zone === Z.ABOUT))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
-      if (zone === Z.TOP && index < 3 && !Data.hasKey()) return;   // the tabs are hidden without the picks
+      if (zone === Z.TOP && index < FIRST_BUTTON && !tabVisible(index)) return;   // the tabs are hidden without the picks
       if (zone === Z.SHELF && st.zone === Z.DRAWER) closeDrawer();
       st.zone = zone;
-      if (zone === Z.TOP) { st.top = index; if (index < 3) selectTab(index); }
+      if (zone === Z.TOP) { st.top = index; if (index < FIRST_BUTTON) selectTab(index); }
       else if (zone === Z.CARDS) st.card = index;
       else if (zone === Z.SHELF) st.shelf = index;
       else if (zone === Z.DRAWER) st.drawer = index;
@@ -1713,6 +1804,7 @@
     var target = ok && Prefs.saverWatch() ? pickTarget(saverPick) : null;
     hideSaver();
     if (target) launcher(target.app.id, target.app.title, target.params)();
+        else if (cards[st.card] && cards[st.card].fromTrakt) toast(trf("Couldn't open {app}.", {app: cards[st.card].title}));
     return true;
   }
 
@@ -1789,7 +1881,7 @@
     st.zone = Z.SHELF;
     st.shelf = 0;
     st.card = 0;
-    selectTab(0);
+    selectTab(WebTrakt.connected() ? TRAKT_TAB : 0);
     updateFocus();
     restInDrawer();   // drawer_first: out again at once, not only after the TV lists its apps
   }
@@ -1813,7 +1905,7 @@
     // LG: with handlesRelaunch the app has to come to the front itself, or opening it again while it runs shows nothing.
     if (window.PalmSystem && window.PalmSystem.activate) window.PalmSystem.activate();
     reset();
-    loadApps(function () { renderShelf(); renderDrawer(); restInDrawer(); Data.refresh(); });
+    loadApps(function () { renderShelf(); renderDrawer(); restInDrawer(); Data.refresh(); refreshTrakt(); });
   }
 
   window.addEventListener('resize', fit);
@@ -1826,7 +1918,7 @@
     hideAmbient();
     if (document.hidden) return;
     idleAt = Date.now();
-    loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
+    loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); refreshTrakt(); });
   });
 
   I18N.set(Prefs.language());
@@ -1836,16 +1928,19 @@
   TV.holdScreenSaver(function () { return !sheetOpen() && (saverMode() === 'clock' || saverPhotos().length > 0); });
   fit();
   renderTop();
+  if (WebTrakt.connected()) renderCards();
   applyDim();
   tickClock();
   loadApps(function () {
     renderAll();
     restInDrawer();
     Data.refresh();
+    refreshTrakt();
   });
   setInterval(function () {
     checkNight();
     Data.refresh();
+    if (!document.hidden) refreshTrakt();
     applyDim();   // automatic: medium from 22:00, off again at 07:00
     // Only on screen: behind another app nobody presses our keys, so idleAt grows old and the screensaver would start
     // there, turning photos every 12 s for nothing while Netflix or YouTube plays.

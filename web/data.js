@@ -587,7 +587,7 @@ var Data = (function () {
         + I18N.base + ',en', function (err, o) {
       if (err) { done(err); return; }
       var best = bestBackdrop(o.images);
-      if (best) p.backdrop = best;
+      if (best || o.backdrop_path) p.backdrop = best || o.backdrop_path;
       if (o.poster_path) p.poster = o.poster_path;
       var parts = [];
       if (p.kind === 'tv') parts.push(tr('Series'));
@@ -778,6 +778,19 @@ var Data = (function () {
     changes: changes,
     get pricesAt() { return pricesAt; },
     activeCoins: activeCoins,
+    traktArtwork: function (item, done) {
+      if (!KEY || !item.id) { done(); return; }
+      var card = {id: item.id, kind: item.kind};
+      details(card, function (err) {
+        if (!err) {
+          item.poster = card.poster;
+          item.backdrop = card.backdrop || card.poster;
+          item.app = card.app;
+          if (card.service) item.meta += (item.meta ? ' · ' : '') + card.service;
+        }
+        done();
+      });
+    },
     hasKey: function () { return !!KEY; },
     checkKey: checkKey,
     /** A key typed (or removed) on the TV: the picks come again with it, or go. */
