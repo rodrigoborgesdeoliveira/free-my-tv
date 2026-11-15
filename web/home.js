@@ -1477,6 +1477,23 @@
     return {app: app, params: via ? {contentTarget: 'nuvio://tmdb/' + (p.kind === 'tv' ? 'series' : 'movie') + '/' + p.id} : null};
   }
 
+  var pendingCardLaunch = null;
+
+  function openCard(card) {
+    if (!card) return;
+    var target = pickTarget(card);
+    if (target) { launcher(target.app.id, target.app.title, target.params)(); return; }
+    if (!card.fromTrakt || pendingCardLaunch === card) return;
+    pendingCardLaunch = card;
+    Data.watchmodeApp(card, function (app) {
+      if (pendingCardLaunch !== card) return;
+      pendingCardLaunch = null;
+      if (st.zone !== Z.CARDS || cards[st.card] !== card || document.hidden) return;
+      if (app) launcher(app.id, app.title)();
+      else toast(trf("Couldn't open {app}.", {app: card.title}));
+    });
+  }
+
   function launcher(id, name, params) {
     return function () {
       TV.launch(id, params || null, function (ok) {
@@ -1519,9 +1536,7 @@
         else openSettings();
         return;
       case Z.CARDS:
-        var target = pickTarget(cards[st.card]);
-        if (target) launcher(target.app.id, target.app.title, target.params)();
-        else if (cards[st.card] && cards[st.card].fromTrakt) toast(trf("Couldn't open {app}.", {app: cards[st.card].title}));
+        openCard(cards[st.card]);
         return;
       case Z.SHELF:
         if (shelf[st.shelf]) launcher(shelf[st.shelf].id, shelf[st.shelf].title)();
@@ -1567,6 +1582,7 @@
   }
 
   function move(dx, dy) {
+    pendingCardLaunch = null;
     waitingForStartupQueue = false;
     var tiles = $('tiles').children, cardNodes = $('cards').children;
     switch (st.zone) {
@@ -1624,6 +1640,7 @@
   }
 
   function back() {
+    pendingCardLaunch = null;
     waitingForStartupQueue = false;
     if (st.zone === Z.EDIT) {
       setClass($('shelfedit'), 'open', false);

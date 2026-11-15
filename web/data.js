@@ -487,6 +487,32 @@ var Data = (function () {
     return null;
   }
 
+  var watchmodeSources = {};
+
+  function watchmodeApp(item, done) {
+    if (!CONFIG.watchmodeKey || !item.id) { done(null); return; }
+    var title = item.kind + '-' + item.id;
+    var cacheKey = REGION + ':' + title;
+    function match(sources) {
+      for (var i = 0; i < sources.length; i++) {
+        var source = sources[i];
+        if (!source || source.region !== REGION || !/^(sub|free)$/.test(source.type)) continue;
+        var name = String(source.name || '').toLowerCase();
+        if (/^apple\s*tv\+$/.test(name)) name = 'apple tv+';
+        var provider = service(name, name === 'apple tv+' ? 350 : 0);
+        if (provider && usable(provider[1])) { done(appFor(provider[1])); return; }
+      }
+      done(null);
+    }
+    if (watchmodeSources[cacheKey]) { match(watchmodeSources[cacheKey]); return; }
+    get('https://api.watchmode.com/v1/title/' + encodeURIComponent(title) + '/sources/?regions=' +
+      encodeURIComponent(REGION) + '&apiKey=' + encodeURIComponent(CONFIG.watchmodeKey), {}, function (err, sources) {
+      if (err || !Array.isArray(sources)) { done(null); return; }
+      watchmodeSources[cacheKey] = sources;
+      match(sources);
+    });
+  }
+
   function tmdb(path, done, key) {
     key = key || KEY;
     var bearer = key.indexOf('eyJ') === 0;   // read access token (v4) or API key (v3)
@@ -778,6 +804,7 @@ var Data = (function () {
     changes: changes,
     get pricesAt() { return pricesAt; },
     activeCoins: activeCoins,
+    watchmodeApp: watchmodeApp,
     traktArtwork: function (item, done) {
       if (!KEY || !item.id) { done(); return; }
       var card = {id: item.id, kind: item.kind};
