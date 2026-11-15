@@ -4,6 +4,8 @@
 
 # Free My TV
 
+This is my personal fork of [the original Free My TV project](https://github.com/simbasjungles/free-my-tv), maintained for my own needs. I encourage everyone to use the original project.
+
 **A fast, ad-free home screen for Google TV, LG and Samsung TVs.**
 
 Trending picks from your own apps, the weather at a glance, and a look that follows the sunset.<br>
