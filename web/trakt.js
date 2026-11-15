@@ -6,7 +6,7 @@ var WebTrakt = (function () {
   var storageKey = 'fmtv.trakt.' + client;
   var queueKey = storageKey + '.queue';
   var session = null, attempt = 0, signingIn = false, loading = false;
-  var cards = [], refreshedAt = 0;
+  var cards = [], recommendations = [], refreshedAt = 0;
   var images = {}, artworkStatus = '';
 
   // Trakt requires apps to cache the bytes instead of embedding CDN URLs.
@@ -171,7 +171,7 @@ var WebTrakt = (function () {
         artworkStatus = loaded + '/' + items.length + (artworkError ? ' · ' + artworkError : '');
       } else artworkStatus = 'queue request failed';
       changed(ok ? 'loaded' : 'error');
-      pruneImages(cards);
+      pruneImages(cards.concat(recommendations));
     }
 
     function get(path, done) {
@@ -212,8 +212,40 @@ var WebTrakt = (function () {
 
     function artwork(index) {
       if (attempt !== id) return;
-      if (index === items.length) { finish(true); return; }
-      var item = items[index];
+      if (index === items.length) { finish(true); loadRecommendations(); return; }
+      loadArtwork(items[index], function () { artwork(index + 1); });
+    }
+
+    function loadRecommendations() {
+      var picks = [];
+      function collect(kind, done) {
+        var type = kind === 'tv' ? 'show' : 'movie';
+        get('/recommendations/' + type + 's?ignore_collected=true&limit=4', function (status, results) {
+          if (status === 200 && Array.isArray(results)) {
+            results.slice(0, 4).forEach(function (result) {
+              var media = result && (result[type] || result);
+              if (media && media.ids && Number(media.ids.trakt)) {
+                picks.push({id: media.ids.tmdb, traktId: Number(media.ids.trakt), kind: kind, title: media.title, meta: ''});
+              }
+            });
+          }
+          done();
+        });
+      }
+      function next(index) {
+        if (attempt !== id) return;
+        if (index === picks.length) {
+          var ready = picks.filter(function (pick) { return !!pick.traktImage; });
+          if (ready.length) recommendations = ready;
+          pruneImages(cards.concat(recommendations));
+          return;
+        }
+        loadArtwork(picks[index], function () { next(index + 1); });
+      }
+      collect('movie', function () { collect('tv', function () { next(0); }); });
+    }
+
+    function loadArtwork(item, done) {
       var path = (item.kind === 'movie' ? '/movies/' : '/shows/') + item.traktId;
       function load(extended) {
         get(path + '?extended=' + extended, function (status, media) {
@@ -227,7 +259,7 @@ var WebTrakt = (function () {
               if (window.console) window.console.warn('Trakt artwork: ' + reason);
             }
             item.traktImage = localUrl;
-            enrich(item, function () { artwork(index + 1); });
+            enrich(item, done);
           });
         });
       }
@@ -270,6 +302,7 @@ var WebTrakt = (function () {
     available: !!client,
     connected: function () { return !!session; },
     cards: function () { return cards; },
+    recommendations: function () { return recommendations; },
     artworkStatus: function () { return artworkStatus; },
     signIn: signIn,
     refresh: refresh,
@@ -279,6 +312,7 @@ var WebTrakt = (function () {
       refreshedAt = 0;
       artworkStatus = '';
       cards = [];
+      recommendations = [];
       pruneImages(cards);
       save(null);
       try { localStorage.removeItem(queueKey); } catch (e) {}

@@ -1716,11 +1716,13 @@
 
   /** The screensaver's photos: picks with an app on the TV. */
   function saverPhotos() {
+    if (TV.name === 'tizen') return WebTrakt.recommendations();
     return Data.showcase().filter(function (p) { return p.backdrop && Data.usable(p.app); });
   }
 
   function showSaver() {
     var photos = saverPhotos();
+    if (TV.name === 'tizen' && !photos.length) return;
     saverOn = true;
     saverPick = null;
     var s = $('saver');
@@ -1738,7 +1740,7 @@
       var p = photos.length ? photos[saverIndex++ % photos.length] : null;
       var back = front === a ? b : a;
       if (p) {
-        back.style.backgroundImage = 'url(' + Data.image(p.backdrop, 'original') + ')';
+        back.style.backgroundImage = 'url(' + cardImage(p, 'original') + ')';
         back.style.webkitTransform = back.style.transform = 'scale(1.0)';
         clock.children[2].textContent = p.title;
         saverPick = p;
