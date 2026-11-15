@@ -949,13 +949,13 @@
         }},
       {label: tr('Dim'), value: dimName(),
         step: function (d) { cycle('dim', ['off', 'low', 'medium', 'high', 'auto'], Prefs.dim(), d); applyDim(); }},
-      {label: tr('Screensaver'), value: saverMode() === 'clock' ? tr('Clock') : tr('Photos'),
+      {label: tr('Screensaver'), saverMode: true, value: saverMode() === 'clock' ? tr('Clock') : tr('Photos'),
         step: function (d) { cycle('saver', ['photos', 'clock'], saverMode(), d); }},
       {label: tr('Picks per tab'), value: String(Prefs.cards()),
         step: function (d) { Prefs.set('cards', 3 + (Prefs.cards() - 3 + (d || 1) + 4) % 4); renderCards(); }},
       {label: tr('Cartoons and anime'), toggle: !Prefs.hideAnimation(),
         step: function () { Prefs.set('hideAnimation', !Prefs.hideAnimation()); Data.refresh(); }},
-      {label: tr('Watch from the screensaver'), toggle: Prefs.saverWatch(),
+      {label: tr('Watch from the screensaver'), saverMode: true, toggle: Prefs.saverWatch(),
         step: function () { Prefs.set('saverWatch', !Prefs.saverWatch()); }},
       {label: tr('Weather widget'), toggle: Prefs.weather(),
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
@@ -966,6 +966,7 @@
       {label: tr('Quotes widget'), toggle: Prefs.quotes(),
         step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
     ];
+    if (TV.name === 'tizen') rows = rows.filter(function (row) { return !row.saverMode; });
     var names = ['Bitcoin', 'Ethereum', 'Solana', tr('Dollar')];
     var count = Data.currency === 'BRL' ? 4 : 3;
     for (var i = 0; i < count; i++) {
@@ -1693,7 +1694,9 @@
   var saverOn = false, idleAt = Date.now(), saverIndex = 0, saverTimer = 0, saverPick = null, SAVER_AFTER = 5 * 60000;
 
   /** "photos" (the picks' photos, as it always was) or "clock": what the screen shows when nobody touches it. */
-  function saverMode() { return Prefs.saver(); }
+  function saverWatchEnabled() { return TV.name !== 'tizen' && Prefs.saverWatch(); }
+
+  function saverMode() { return TV.name === 'tizen' ? 'photos' : Prefs.saver(); }
 
   /** Dim, as the person picked it: off, low, medium, high, or automatic (medium from 22:00 to 07:00). */
   function dimName() {
@@ -1745,7 +1748,7 @@
         clock.children[2].textContent = p.title;
         saverPick = p;
         // With Watch from the screensaver on, OK opens this title's app (any other key only closes).
-        var target = Prefs.saverWatch() ? pickTarget(p) : null;
+        var target = saverWatchEnabled() ? pickTarget(p) : null;
         hint.textContent = target ? trf('Press OK to watch on {app} · any other button to close', {app: target.app.title}) : '';
         setTimeout(function () {
           setClass(back, 'on', true);
@@ -1817,7 +1820,7 @@
     idleAt = Date.now();
     if (ambientOn) { hideAmbient(); return true; }
     if (!saverOn) return false;
-    var target = ok && Prefs.saverWatch() ? pickTarget(saverPick) : null;
+    var target = ok && saverWatchEnabled() ? pickTarget(saverPick) : null;
     hideSaver();
     if (target) launcher(target.app.id, target.app.title, target.params)();
         else if (cards[st.card] && cards[st.card].fromTrakt) toast(trf("Couldn't open {app}.", {app: cards[st.card].title}));
